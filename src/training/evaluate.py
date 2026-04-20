@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-
+import json
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -22,6 +22,29 @@ MAX_LENGTH = 256
 
 def sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-x))
+
+def evaluate_model(model, loader, device, threshold=0.5):
+    model.eval()
+    all_probs = []
+    all_labels = []
+
+    with torch.no_grad():
+        for batch in loader:
+            labels = batch["labels"].cpu().numpy()
+            batch = {k: v.to(device) for k, v in batch.items()}
+            outputs = model(**batch)
+
+            logits = outputs["logits"].detach().cpu().numpy()
+            probs = 1 / (1 + np.exp(-logits))
+
+            all_probs.append(probs)
+            all_labels.append(labels)
+
+    all_probs = np.concatenate(all_probs, axis=0)
+    all_labels = np.concatenate(all_labels, axis=0)
+
+    preds = (all_probs >= threshold).astype(int)
+    return all_labels, preds, all_probs
 
 
 def evaluate_checkpoint(checkpoint_path: Path, device: torch.device) -> None:
@@ -73,14 +96,20 @@ def evaluate_checkpoint(checkpoint_path: Path, device: torch.device) -> None:
     y_true = torch.cat(all_labels, dim=0).numpy()
     y_true_bin = torch.cat(all_label_binary, dim=0).numpy()
 
+    threshold_path = MODELS_DIR / "baseline_threshold.json"
+    threshold = 0.5
+    if threshold_path.exists():
+        with open(threshold_path) as f:
+          threshold = json.load(f)["threshold"]
+
     probs = sigmoid(logits)
-    y_pred = (probs >= 0.5).astype(int)
+    y_pred = (probs >= threshold).astype(int)
 
     macro_f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
     micro_f1 = f1_score(y_true, y_pred, average="micro", zero_division=0)
 
     probs_bin = probs.max(axis=1)
-    y_pred_bin = (probs_bin >= 0.5).astype(int)
+    y_pred_bin = (probs_bin >= threshold).astype(int)
 
     f1_bin = f1_score(y_true_bin, y_pred_bin, zero_division=0)
     try:
