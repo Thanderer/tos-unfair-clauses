@@ -14,14 +14,11 @@ def logits_to_severity(logits) -> float:
     raise NotImplementedError("Implement logits_to_severity().")
 
 
-def severity_to_label(severity: float) -> str:
-    """
-    Map 1–10 severity to plain-English verdicts.
-    """
-    if severity <= 2:
-        return "You are good to go."
-    if severity <= 5:
-        return "Needs another look."
-    if severity <= 8:
-        return "This might be trouble."
-    return "DO NOT AGREE TO THIS."
+def severity_label(score: int) -> str:
+    if score <= 3:
+        return "You are good to go"
+    if score <= 5:
+        return "Needs another look"
+    if score <= 7:
+        return "This might be trouble"
+    return "DO NOT AGREE TO THIS"
