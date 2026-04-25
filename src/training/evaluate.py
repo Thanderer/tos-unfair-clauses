@@ -13,7 +13,7 @@ from sklearn.metrics import f1_score, roc_auc_score, average_precision_score
 from src.config import BASE_MODEL_NAME, BATCH_SIZE, MODELS_DIR
 from src.data.load_unfair_tos import prepare_unfair_tos_datasets
 from src.models.baseline_legalbert import BaselineLegalBert
-from src.training.train_baseline import collate_fn  # reuse exact same batching
+from src.training.train_baseline import collate_fn
 
 
 NUM_LABELS = 8
@@ -23,41 +23,16 @@ MAX_LENGTH = 256
 def sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-x))
 
-def evaluate_model(model, loader, device, threshold=0.5):
-    model.eval()
-    all_probs = []
-    all_labels = []
-
-    with torch.no_grad():
-        for batch in loader:
-            labels = batch["labels"].cpu().numpy()
-            batch = {k: v.to(device) for k, v in batch.items()}
-            outputs = model(**batch)
-
-            logits = outputs["logits"].detach().cpu().numpy()
-            probs = 1 / (1 + np.exp(-logits))
-
-            all_probs.append(probs)
-            all_labels.append(labels)
-
-    all_probs = np.concatenate(all_probs, axis=0)
-    all_labels = np.concatenate(all_labels, axis=0)
-
-    preds = (all_probs >= threshold).astype(int)
-    return all_labels, preds, all_probs
-
 
 def evaluate_checkpoint(checkpoint_path: Path, device: torch.device) -> None:
     print(f"Loading model from {checkpoint_path}")
 
-    # model must match the one used in training
     model = BaselineLegalBert(num_labels=NUM_LABELS, use_binary_head=True)
     state_dict = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
 
-    # Data – same preprocessing as training
     ds, tokenizer = prepare_unfair_tos_datasets(max_length=MAX_LENGTH)
     test_ds = ds["test"]
 
@@ -85,7 +60,6 @@ def evaluate_checkpoint(checkpoint_path: Path, device: torch.device) -> None:
                 labels=None,
                 label_binary=None,
             )
-            # BaselineLegalBert returns dict-like; logits are under "logits"
             logits = outputs["logits"]
 
             all_logits.append(logits.cpu())
@@ -100,7 +74,7 @@ def evaluate_checkpoint(checkpoint_path: Path, device: torch.device) -> None:
     threshold = 0.5
     if threshold_path.exists():
         with open(threshold_path) as f:
-          threshold = json.load(f)["threshold"]
+            threshold = json.load(f)["threshold"]
 
     probs = sigmoid(logits)
     y_pred = (probs >= threshold).astype(int)
@@ -129,6 +103,22 @@ def evaluate_checkpoint(checkpoint_path: Path, device: torch.device) -> None:
     print(f"Binary PR-AUC: {ap_bin:.4f}")
     print("================================\n")
 
+    # Save results to reports/
+    reports_dir = Path("reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    results = {
+        "macro_f1": round(float(macro_f1), 4),
+        "micro_f1": round(float(micro_f1), 4),
+        "binary_f1": round(float(f1_bin), 4),
+        "roc_auc": round(float(roc_auc_bin), 4),
+        "pr_auc": round(float(ap_bin), 4),
+    }
+
+    with open(reports_dir / "baseline_metrics.json", "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"Saved metrics to {reports_dir}/baseline_metrics.json")
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -138,10 +128,7 @@ def parse_args() -> argparse.Namespace:
         "--checkpoint",
         type=str,
         default=str(MODELS_DIR / "baseline_legal_bert.pt"),
-        help=(
-            "Path to the trained model .pt file "
-            "(must match what train_baseline.py saved)."
-        ),
+        help="Path to the trained model .pt file.",
     )
     return parser.parse_args()
 
