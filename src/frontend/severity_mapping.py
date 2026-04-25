@@ -1,17 +1,20 @@
-"""
-Map raw model outputs to severity scores and human-readable labels.
-"""
+# src/frontend/severity_mapping.py
 
-from typing import Tuple
+import math
 
 
-def logits_to_severity(logits) -> float:
+def logits_to_severity(logits) -> int:
     """
-    TODO:
-    - Decide how to convert logits/probabilities into a 1–10 severity score.
-      Example (placeholder): severity = 10 * p(unfair).
+    Convert probability/logits → 1–10 severity score
     """
-    raise NotImplementedError("Implement logits_to_severity().")
+
+    if 0 <= logits <= 1:
+        p = logits
+    else:
+        p = 1 / (1 + math.exp(-logits))
+
+    score = int(round(p * 10))
+    return max(1, min(10, score))
 
 
 def severity_label(score: int) -> str:
@@ -22,3 +25,19 @@ def severity_label(score: int) -> str:
     if score <= 7:
         return "This might be trouble"
     return "DO NOT AGREE TO THIS"
+
+
+def aggregate_severity(results):
+    """
+    Compute document-level severity
+    """
+    if not results:
+        return 1
+
+    scores = [r["severity_score"] for r in results]
+
+    avg = sum(scores) / len(scores)
+    mx = max(scores)
+
+    final = int(round(0.6 * mx + 0.4 * avg))
+    return max(1, min(10, final))
