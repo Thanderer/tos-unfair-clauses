@@ -15,6 +15,8 @@ MODELS_DIR = PROJECT_ROOT / "models"  # for saved checkpoints
 # Hugging Face model names
 BASE_MODEL_NAME = "nlpaueb/legal-bert-base-uncased"  # TODO: confirm choice
 
+MAX_LENGTH = 256
+
 # Training hyperparameters
 BASELINE_EPOCHS = 3          # TODO: tune
 BASELINE_LR = 2e-5           # TODO: tune

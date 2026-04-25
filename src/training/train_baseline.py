@@ -78,6 +78,33 @@ def find_best_threshold(model, loader, device):
     print(f"Best threshold: {best_thr:.2f} with micro F1={best_f1:.4f}")
     return best_thr, best_f1
 
+def find_best_binary_threshold(model, loader, device):
+    model.eval()
+    all_probs_bin, all_y_bin = [], []
+
+    with torch.no_grad():
+        for batch in loader:
+            y_bin = batch["label_binary"].cpu().numpy()
+            batch = {k: v.to(device) for k, v in batch.items()}
+            outputs = model(**batch)
+            logits_bin = outputs["logits_binary"].detach().cpu().numpy()
+            probs_bin = 1 / (1 + np.exp(-logits_bin))
+            all_probs_bin.append(probs_bin)
+            all_y_bin.append(y_bin)
+
+    all_probs_bin = np.concatenate(all_probs_bin)
+    all_y_bin = np.concatenate(all_y_bin)
+
+    best_thr, best_f1 = 0.5, -1.0
+    for thr in np.arange(0.05, 0.96, 0.05):
+        preds = (all_probs_bin >= thr).astype(int)
+        f1 = f1_score(all_y_bin, preds, zero_division=0)
+        if f1 > best_f1:
+            best_f1 = f1
+            best_thr = thr
+
+    print(f"Best binary threshold: {best_thr:.2f} with F1={best_f1:.4f}")
+    return best_thr
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -86,9 +113,6 @@ def main():
     ds, tokenizer = prepare_unfair_tos_datasets(max_length=256)
     train_ds = ds["train"]
     val_ds = ds["validation"]
-
-    train_ds_small = train_ds.select(range(700))
-    val_ds_small = val_ds.select(range(150))
 
     batch_size = 16
     num_epochs = 3
@@ -112,14 +136,19 @@ def main():
         val_loss = evaluate(model, val_loader, device)
         print(f"Epoch {epoch}: train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
 
-    best_thr, best_val_f1 = find_best_threshold(model, val_loader, device)
-    print(f"Chosen threshold from validation: {best_thr:.2f}")
+    best_thr_multi, _ = find_best_threshold(model, val_loader, device)
+    best_thr_binary = find_best_binary_threshold(model, val_loader, device)
+    print(f"Chosen multi threshold from validation: {best_thr_multi:.2f}")
+    print(f"Chosen binary threshold from validation: {best_thr_binary:.2f}")
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
     threshold_path = MODELS_DIR / "baseline_threshold.json"
     with open(threshold_path, "w") as f:
-        json.dump({"threshold": float(best_thr)}, f)
+        json.dump({
+            "threshold": float(best_thr_multi),
+            "binary_threshold": float(best_thr_binary)
+        }, f)
     print(f"Saved threshold to {threshold_path}")
 
     save_path = MODELS_DIR / "baseline_legal_bert.pt"

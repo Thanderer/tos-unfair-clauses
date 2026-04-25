@@ -46,6 +46,7 @@ def evaluate_checkpoint(checkpoint_path: Path, device: torch.device) -> None:
     all_logits = []
     all_labels = []
     all_label_binary = []
+    all_logits_binary = []
 
     with torch.no_grad():
         for batch in test_loader:
@@ -61,29 +62,34 @@ def evaluate_checkpoint(checkpoint_path: Path, device: torch.device) -> None:
                 label_binary=None,
             )
             logits = outputs["logits"]
+            logits_bin = outputs["logits_binary"]
 
             all_logits.append(logits.cpu())
             all_labels.append(labels.cpu())
             all_label_binary.append(label_binary.cpu())
+            all_logits_binary.append(logits_bin.cpu())
 
     logits = torch.cat(all_logits, dim=0).numpy()
     y_true = torch.cat(all_labels, dim=0).numpy()
     y_true_bin = torch.cat(all_label_binary, dim=0).numpy()
+    logits_binary = torch.cat(all_logits_binary, dim=0).numpy()  
+    probs_bin = 1.0 / (1.0 + np.exp(-logits_binary))             
 
     threshold_path = MODELS_DIR / "baseline_threshold.json"
     threshold = 0.5
+    binary_threshold = 0.5
     if threshold_path.exists():
         with open(threshold_path) as f:
-            threshold = json.load(f)["threshold"]
+            data = json.load(f)
+            threshold = data["threshold"]
+            binary_threshold = data.get("binary_threshold", 0.5)
 
     probs = sigmoid(logits)
     y_pred = (probs >= threshold).astype(int)
+    y_pred_bin = (probs_bin >= binary_threshold).astype(int)
 
     macro_f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
     micro_f1 = f1_score(y_true, y_pred, average="micro", zero_division=0)
-
-    probs_bin = probs.max(axis=1)
-    y_pred_bin = (probs_bin >= threshold).astype(int)
 
     f1_bin = f1_score(y_true_bin, y_pred_bin, zero_division=0)
     try:
