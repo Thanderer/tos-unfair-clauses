@@ -8,21 +8,25 @@ from src.config import BASE_MODEL_NAME
 
 
 class BaselineLegalBert(nn.Module):
-    def __init__(self, num_labels: int = 8, use_binary_head: bool = True):
+    def __init__(self, num_labels: int = 8, use_binary_head: bool = True, pos_weight=None):
         super().__init__()
         self.config = AutoConfig.from_pretrained(BASE_MODEL_NAME, num_labels=num_labels)
         self.bert = AutoModel.from_pretrained(BASE_MODEL_NAME, config=self.config)
         self.dropout = nn.Dropout(0.1)
 
-        # Multi-label head for 8 unfair types
         self.classifier = nn.Linear(self.config.hidden_size, num_labels)
 
-        # Optional extra binary unfair/fair head
         self.use_binary_head = use_binary_head
         if self.use_binary_head:
             self.binary_classifier = nn.Linear(self.config.hidden_size, 1)
+            
+        if pos_weight is not None:
+            self.register_buffer("pos_weight", pos_weight)
+        else:
+            self.pos_weight = None
+        
+        self.loss_fct_multi = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
 
-        self.loss_fct_multi = nn.BCEWithLogitsLoss()
         if self.use_binary_head:
             self.loss_fct_binary = nn.BCEWithLogitsLoss()
 

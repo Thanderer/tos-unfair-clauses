@@ -29,6 +29,7 @@ def train_epoch(model, loader, optimizer, scheduler, device):
         outputs = model(**batch)
         loss = outputs["loss"]
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         if scheduler is not None:
             scheduler.step()
@@ -112,6 +113,12 @@ def main():
 
     ds, tokenizer = prepare_unfair_tos_datasets(max_length=256)
     train_ds = ds["train"]
+    all_labels = np.array(train_ds["labels"])
+    pos_counts = all_labels.sum(axis=0)
+    neg_counts = len(train_ds) - pos_counts
+    pos_weight = torch.tensor(neg_counts / np.clip(pos_counts, 1, None), dtype=torch.float)
+    print("pos_weight:", pos_weight)
+
     val_ds = ds["validation"]
 
     batch_size = 16
@@ -120,7 +127,7 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
-    model = BaselineLegalBert(num_labels=8, use_binary_head=True)
+    model = BaselineLegalBert(num_labels=8, use_binary_head=True, pos_weight=pos_weight)
     model.to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)
@@ -131,17 +138,26 @@ def main():
         num_training_steps=num_training_steps,
     )
 
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+    best_val_loss = float("inf")
+    save_path = MODELS_DIR / "baseline_legal_bert.pt"
+
     for epoch in range(1, num_epochs + 1):
         train_loss = train_epoch(model, train_loader, optimizer, scheduler, device)
         val_loss = evaluate(model, val_loader, device)
         print(f"Epoch {epoch}: train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
 
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), save_path)
+            print(f" Best model saved (val_loss={val_loss:.4f})")
+
     best_thr_multi, _ = find_best_threshold(model, val_loader, device)
     best_thr_binary = find_best_binary_threshold(model, val_loader, device)
+
     print(f"Chosen multi threshold from validation: {best_thr_multi:.2f}")
     print(f"Chosen binary threshold from validation: {best_thr_binary:.2f}")
-
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
     threshold_path = MODELS_DIR / "baseline_threshold.json"
     with open(threshold_path, "w") as f:
@@ -151,9 +167,6 @@ def main():
         }, f)
     print(f"Saved threshold to {threshold_path}")
 
-    save_path = MODELS_DIR / "baseline_legal_bert.pt"
-    torch.save(model.state_dict(), save_path)
-    print(f"Saved model to {save_path}")
 
 
 if __name__ == "__main__":
