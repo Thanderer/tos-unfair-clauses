@@ -1,49 +1,31 @@
-# src/inference/preprocess_input.py
-
+from pathlib import Path
 import re
 
-
 def clean_text(text: str) -> str:
-    text = re.sub(r'\s+', ' ', text)
+    text = text.replace("\r", "\n")
+    text = re.sub(r"\n{2,}", "\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
     return text.strip()
 
-
 def split_into_clauses(text: str):
-    # Split by sentence boundaries
-    parts = re.split(r'[.\n]+', text)
-
+    chunks = re.split(r'(?<=[.!?])\s+|\n{2,}', text)
     clauses = []
-    for p in parts:
-        p = p.strip()
-        if len(p) > 40:  # ignore very small noise
-            clauses.append(p)
-
+    cursor = 0
+    for i, chunk in enumerate(chunks):
+        chunk = chunk.strip()
+        if len(chunk) < 20:
+            continue
+        start = text.find(chunk, cursor)
+        end = start + len(chunk)
+        cursor = end
+        clauses.append({
+            "clause_id": i,
+            "text": chunk,
+            "start_char": start,
+            "end_char": end,
+        })
     return clauses
 
-
 def load_text_input(text: str):
-    """
-    MAIN FUNCTION USED BY UI
-
-    Returns:
-    [
-        {"id": 0, "text": "..."},
-        {"id": 1, "text": "..."}
-    ]
-    """
-
-    if not text:
-        return []
-
     text = clean_text(text)
-    raw_clauses = split_into_clauses(text)
-
-    structured = []
-
-    for idx, clause in enumerate(raw_clauses):
-        structured.append({
-            "id": idx,
-            "text": clause
-        })
-
-    return structured
+    return split_into_clauses(text)
