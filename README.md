@@ -8,13 +8,13 @@ It is the final project for the **Human-Centred Natural Language Processing** co
 
 ## Project goals
 
-- Train a baseline **LegalBERT** classifier on the Lippi et al. (2019) ToS dataset.
-- Extend it with **contrastive learning** to better separate “standard/fair” vs. “intrusive/unfair” clauses.
+- Train a baseline **LegalBERT** classifier on the UNFAIR-ToS / LexGLUE dataset.
+- Extend it with **contrastive learning** to better separate "standard/fair" vs. "intrusive/unfair" clauses.
 - Define a **severity score (1–10)** and simple layman labels, such as:
-  - “You are good to go”
-  - “Needs another look”
-  - “This might be trouble”
-  - “DO NOT AGREE TO THIS”
+  - "You are good to go"
+  - "Needs another look"
+  - "This might be trouble"
+  - "DO NOT AGREE TO THIS"
 - Build a small **web UI** where a user can upload a ToS (text/PDF) and see:
   - Highlighted problematic clauses
   - Clause-level severity + short explanation
@@ -24,8 +24,6 @@ It is the final project for the **Human-Centred Natural Language Processing** co
 
 ## Installation
 
-To set up the project locally and ensure all dependencies are consistent across the team, run the following commands:
-
 ```bash
 # 1. Create a virtual environment (recommended)
 python -m venv venv
@@ -34,7 +32,7 @@ python -m venv venv
 # On macOS/Linux:
 source venv/bin/activate
 # On Windows:
-.\\venv\\Scripts\\activate
+.\venv\Scripts\activate
 
 # 3. Install required packages
 pip install -r requirements.txt
@@ -48,105 +46,114 @@ pip install -r requirements.txt
 tos-unfair-clauses/
 ├── README.md
 ├── requirements.txt
+├── .gitattributes
 │
 ├── notebooks/
-│   ├── 00_colab_tutorials/      # Seminar / example notebooks (read-only)
-│   ├── 01_data_exploration.ipynb
-│   ├── 02_baseline_legalbert.ipynb
-│   ├── 03_contrastive_learning.ipynb
-│   └── 04_frontend_integration.ipynb
-│
-├── src/
-│   ├── __init__.py
-│   ├── config.py               # Paths, model names, hyperparameters
-│   │
-│   ├── data/
-│   │   ├── __init__.py
-│   │   ├── load_unfair_tos.py   # Load Lippi et al. dataset / LexGLUE UNFAIR-ToS
-│   │   ├── preprocess_tosdr.py  # (Optional) ToS;DR preprocessing
-│   │   └── utils_pdf_text.py    # PDF → text, sentence splitting, cleaning
-│   │
-│   ├── models/
-│   │   ├── __init__.py
-│   │   ├── baseline_legalbert.py      # Baseline classifier
-│   │   └── contrastive_legalbert.py   # Classifier + contrastive head
-│   │
-│   ├── training/
-│   │   ├── __init__.py
-│   │   ├── train_baseline.py    # Train baseline model
-│   │   ├── train_contrastive.py # Train contrastive model
-│   │   └── evaluate.py          # F1, AUC, PR-AUC, nDCG, Kendall tau, etc.
-│   │
-│   └── frontend/
-│       ├── __init__.py
-│       ├── severity_mapping.py  # Model outputs → [1–10] severity → text labels
-│       └── app.py               # Gradio (or similar) UI
+│   └── 02_baseline_legalbert.ipynb   # Colab training notebook
 │
 ├── data/
 │   ├── raw/         # Original datasets (not committed)
 │   ├── interim/     # Cleaned / split CSVs
 │   └── processed/   # Model-ready data
 │
+├── models/
+│   ├── baseline_legal_bert.pt        # Trained baseline checkpoint
+│   └── baseline_threshold.json       # Tuned multi-label + binary thresholds
+│
 ├── reports/
-│   ├── hcnlp_final_report.tex   # 12-page report (ACM 1-column)
-│   └── figures/
-│       └── ...                  # Plots, diagrams, UI screenshots
+│   └── baseline_metrics.json         # Test set evaluation results
+│
+├── scripts/
+│   ├── run_baseline.sh
+│   ├── run_contrastive.sh
+│   └── run_app.sh
 │
 ├── slides/
-│   └── presentation.pptx        # ≤ 30 slides
 │
-└── scripts/
-    ├── run_baseline.sh          # (optional) convenience scripts
-    ├── run_contrastive.sh
-    └── run_app.sh
+└── src/
+    ├── __init__.py
+    ├── config.py                      # Paths, model names, hyperparameters
+    │
+    ├── data/
+    │   ├── __init__.py
+    │   ├── load_unfair_tos.py         # LexGLUE UNFAIR-ToS loader + tokenization
+    │   ├── preprocess_tosdr.py        # ToS;DR preprocessing (optional)
+    │   └── utils_pdf_text.py          # PDF → text, sentence splitting, cleaning
+    │
+    ├── models/
+    │   ├── __init__.py
+    │   ├── baseline_legalbert.py      # Dual-head classifier (8-label + binary)
+    │   └── contrastive_legalbert.py   # Classifier + projection head (TODO)
+    │
+    ├── training/
+    │   ├── __init__.py
+    │   ├── train_baseline.py          # Train + threshold tuning + checkpoint save
+    │   ├── train_contrastive.py       # Contrastive training pipeline (TODO)
+    │   └── evaluate.py                # F1, ROC-AUC, PR-AUC on test split
+    │
+    ├── inference/
+    │   ├── __init__.py
+    │   ├── preprocess_input.py        # Clean text + split into clauses
+    │   ├── predict.py                 # Load model, run inference, return probs
+    │   └── postprocess_input.py       # Probs → severity band + explanations
+    │
+    └── frontend/
+        ├── __init__.py
+        ├── severity_mapping.py        # Severity score → layman label (TODO)
+        └── app.py                     # Gradio UI (TODO)
 ```
 
 ---
 
-## Current baseline
+## Current baseline results
 
-The baseline LegalBERT model is trained and evaluated on UNFAIR-ToS. The model uses multi-label predictions for unfair clause types and a binary unfair-vs-fair head for document-level detection. The best validation threshold was tuned to 0.30 and saved for later use.
+The baseline LegalBERT model has a dual-head architecture: an 8-label multi-label head for unfair clause type classification and a dedicated binary head for fair/unfair detection. Both heads are trained jointly with BCEWithLogitsLoss. Separate thresholds are tuned on the validation set for each head and saved to `baseline_threshold.json`.
 
 ### Saved outputs
 
-- `models/baseline_legal_bert.pt` — trained baseline checkpoint.
-- `models/baseline_threshold.json` — tuned prediction threshold from validation.
+- `models/baseline_legal_bert.pt` — trained baseline checkpoint
+- `models/baseline_threshold.json` — contains `threshold` (multi-label, 0.35) and `binary_threshold` (binary head, tuned separately)
+- `reports/baseline_metrics.json` — full test metrics
 
-### Test results
+### Test results (UNFAIR-ToS)
 
-- Multi-label macro F1: 0.5570
-- Multi-label micro F1: 0.6387
-- Binary unfair-vs-fair F1: 0.7517
-- Binary ROC-AUC: 0.9649
-- Binary PR-AUC: 0.8973
+| Metric | Score |
+|---|---|
+| Multi-label macro F1 | 0.5120 |
+| Multi-label micro F1 | 0.6333 |
+| Binary unfair-vs-fair F1 | 0.7397 |
+| Binary ROC-AUC | **0.9674** |
+| Binary PR-AUC | **0.8807** |
+
+The strong ROC-AUC (0.9674) confirms the model ranks clauses reliably. The macro F1 gap relative to published LegalBERT baselines (~0.83) is primarily driven by class imbalance across rare unfair clause types.
 
 ---
 
 ## Why this baseline design
 
-- We chose UNFAIR-ToS because it directly matches the unfair-clause detection task and provides supervised clause-level labels.
-- We used LegalBERT as a strong baseline to establish a reliable benchmark before adding more advanced methods.
-- The labels were converted into fixed multi-hot vectors because the dataset annotations are variable-length lists of unfair clause indices.
-- We tuned the prediction threshold on validation data because 0.5 was too conservative and 0.30 gave better micro F1.
+- UNFAIR-ToS provides supervised clause-level labels that directly match the task.
+- LegalBERT is pre-trained on legal text, giving a stronger domain baseline than general BERT.
+- The dual-head design separates the "what type" (8-label) and "is it unfair" (binary) signals, with separate threshold tuning for each.
+- Multi-hot label conversion is required because the dataset stores annotations as variable-length index lists.
 
 ---
 
 ## Planned next steps
 
-- Implement contrastive learning to improve separation between fair and unfair clauses.
-- Add severity scoring from 1–10 with simple layman labels.
-- Build a small UI for text/PDF upload, highlighted clauses, severity explanations, and overall verdict.
-- Optionally use ToS;DR for qualitative evaluation and demo examples rather than main training.
+- Implement supervised contrastive loss in `train_contrastive.py` to improve embedding separation between fair and unfair clauses.
+- Complete `severity_mapping.py` (`logits_to_severity`) and wire it into the inference pipeline.
+- Build the Gradio UI in `app.py` for text/PDF upload with highlighted clauses and severity output.
+- Add class-weighted loss and per-label thresholds to improve macro F1.
 
 ---
 
-## Run baseline
+## Run baseline training
 
 ```bash
 python -m src.training.train_baseline
 ```
 
-## Evaluate baseline
+## Evaluate on test set
 
 ```bash
 python -m src.training.evaluate
@@ -156,5 +163,6 @@ python -m src.training.evaluate
 
 ## Notes
 
-- The UNFAIR-ToS preprocessing expects label lists to be converted into fixed-length multi-hot vectors before batching.
-- The evaluation script should load the saved threshold file so that test metrics use the tuned cutoff instead of a default 0.5 threshold.
+- `baseline_threshold.json` stores two keys: `threshold` (used for 8-label multi-label predictions) and `binary_threshold` (used for the binary head). Both are loaded separately in `evaluate.py` and `predict.py`.
+- The inference pipeline runs: `preprocess_input.py` → `predict.py` → `postprocess_input.py` and returns per-clause severity bands (`SAFE` / `MEDIUM` / `HIGH`) and explanations.
+- Training was run on Google Colab (GPU). CPU training is supported but slow.
