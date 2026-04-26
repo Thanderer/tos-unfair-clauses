@@ -1,4 +1,3 @@
-code = '''
 """
 Training script for ContrastiveLegalBert.
 - Same data pipeline as baseline for fair comparison
@@ -106,6 +105,33 @@ def find_best_threshold(model, loader, device):
     print(f"Best threshold: {best_thr:.2f}  micro_F1={best_f1:.4f}")
     return float(best_thr), float(best_f1)
 
+# after line 107, ADD this entire new function:
+@torch.no_grad()
+def find_best_binary_threshold(model, loader, device):
+    model.eval()
+    all_probs, all_y = [], []
+    for batch in loader:
+        input_ids      = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        labels_bin     = batch["label_binary"].cpu().numpy()
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+        logits  = outputs["binary_logits"].cpu().numpy().squeeze()
+        probs   = 1 / (1 + np.exp(-logits))
+        all_probs.append(probs)
+        all_y.append(labels_bin)
+
+    all_probs = np.concatenate(all_probs)
+    all_y     = np.concatenate(all_y)
+
+    best_thr, best_f1 = 0.5, -1.0
+    for thr in np.arange(0.05, 0.96, 0.05):
+        preds = (all_probs >= thr).astype(int)
+        f1    = f1_score(all_y, preds, zero_division=0)
+        if f1 > best_f1:
+            best_f1, best_thr = f1, thr
+
+    print(f"Best binary threshold: {best_thr:.2f}  F1={best_f1:.4f}")
+    return float(best_thr)
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -156,30 +182,35 @@ def main():
         num_training_steps=num_training_steps,
     )
 
-    print("\\nStarting contrastive training...")
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+    print("\nStarting contrastive training...")
+    best_val_loss = float("inf")
     for epoch in range(1, CONTRASTIVE_EPOCHS + 1):
         train_loss = train_epoch(model, train_loader, optimizer, scheduler, device)
         val_loss   = evaluate(model, val_loader, device)
         print(f"Epoch {epoch}/{CONTRASTIVE_EPOCHS}: "
               f"train_loss={train_loss:.4f}  val_loss={val_loss:.4f}")
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), MODELS_DIR / "contrastive_legal_bert.pt")
+            print(f"  ✓ Best model saved (val_loss={val_loss:.4f})")
+            
+    print("Loading best checkpoint for threshold tuning...")
+    model.load_state_dict(torch.load(MODELS_DIR / "contrastive_legal_bert.pt", map_location=device), strict=False)
+    model.eval()
 
-    print("\\nFinding best threshold on validation set...")
+    print("\nFinding best threshold on validation set...")
     best_thr, best_f1 = find_best_threshold(model, val_loader, device)
-
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    best_bin_thr = find_best_binary_threshold(model, val_loader, device)
 
     with open(MODELS_DIR / "contrastive_threshold.json", "w") as f:
-        json.dump({"threshold": best_thr, "best_val_micro_f1": best_f1}, f, indent=2)
+        json.dump({"threshold": best_thr, "binary_threshold":  best_bin_thr, "best_val_micro_f1": best_f1}, f, indent=2)
     print(f"Saved threshold → {MODELS_DIR}/contrastive_threshold.json")
-
-    torch.save(model.state_dict(), MODELS_DIR / "contrastive_legal_bert.pt")
-    print(f"Saved model     → {MODELS_DIR}/contrastive_legal_bert.pt")
-
 
 if __name__ == "__main__":
     main()
-'''
-
+    
 with open("src/training/train_contrastive.py", "w") as f:
     f.write(code)
 print("train_contrastive.py updated!")
