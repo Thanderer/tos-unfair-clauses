@@ -1,4 +1,3 @@
-code = '''
 from __future__ import annotations
 
 import json
@@ -31,7 +30,7 @@ def main():
     state_dict = torch.load(
         MODELS_DIR / "contrastive_legal_bert.pt", map_location=device
     )
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict, strict =False)
     model.to(device)
     model.eval()
 
@@ -46,10 +45,13 @@ def main():
 
     # Load multi-label threshold
     threshold = 0.15
+    binary_threshold = 0.45
     threshold_path = MODELS_DIR / "contrastive_threshold.json"
     if threshold_path.exists():
         with open(threshold_path) as f:
-            threshold = json.load(f)["threshold"]
+            data = json.load(f)
+            threshold = data["threshold"]
+            binary_threshold = data.get("binary_threshold", 0.45)
     print(f"Using multi-label threshold: {threshold}")
 
     # Run inference
@@ -80,7 +82,6 @@ def main():
     # Binary predictions using binary head logits
     binary_logits    = torch.cat(all_binary_logits).numpy().squeeze()
     probs_bin        = 1.0 / (1.0 + np.exp(-binary_logits))
-    binary_threshold = 0.45
     y_pred_bin       = (probs_bin >= binary_threshold).astype(int)
 
     # Compute metrics
@@ -97,13 +98,13 @@ def main():
     except ValueError:
         pr_auc = float("nan")
 
-    print("\\n=== Contrastive Model Test Metrics ===")
+    print("\n=== Contrastive Model Test Metrics ===")
     print(f"Multi-label Macro F1 : {macro_f1:.4f}")
     print(f"Multi-label Micro F1 : {micro_f1:.4f}")
     print(f"Binary F1            : {f1_bin:.4f}")
     print(f"Binary ROC-AUC       : {roc_auc:.4f}")
     print(f"Binary PR-AUC        : {pr_auc:.4f}")
-    print("=======================================\\n")
+    print("\n=======================================\n")
 
     # Save results
     results = {
@@ -122,10 +123,8 @@ def main():
         json.dump(results, f, indent=2)
     print(f"Saved → reports/contrastive_metrics.json")
 
-
 if __name__ == "__main__":
     main()
-'''
 
 with open("src/training/evaluate_contrastive.py", "w") as f:
     f.write(code)
