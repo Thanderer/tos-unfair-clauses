@@ -1,9 +1,9 @@
-
+code = '''
 """
 Training script for ContrastiveLegalBert.
 - Same data pipeline as baseline for fair comparison
-- Combined classification + supervised contrastive loss
-- Saves contrastive_legal_bert.pt and contrastive_threshold.json
+- pos_weight computed exactly like train_baseline.py
+- Combined classification + contrastive + binary loss
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import numpy as np
 import torch
-from pathlib import Path
 from torch.utils.data import DataLoader
 from transformers import get_linear_schedule_with_warmup
 from sklearn.metrics import f1_score
@@ -29,7 +28,6 @@ from src.models.contrastive_legalbert import ContrastiveLegalBert
 torch.manual_seed(SEED)
 
 
-# ── collate ───────────────────────────────────────────────────────────────────
 def collate_fn(batch):
     return {
         "input_ids":      torch.stack([b["input_ids"]      for b in batch]),
@@ -39,7 +37,6 @@ def collate_fn(batch):
     }
 
 
-# ── train one epoch ───────────────────────────────────────────────────────────
 def train_epoch(model, loader, optimizer, scheduler, device):
     model.train()
     total_loss = 0.0
@@ -61,11 +58,9 @@ def train_epoch(model, loader, optimizer, scheduler, device):
         if scheduler:
             scheduler.step()
         total_loss += loss.item()
-
     return total_loss / len(loader)
 
 
-# ── validation loss ───────────────────────────────────────────────────────────
 @torch.no_grad()
 def evaluate(model, loader, device):
     model.eval()
@@ -83,17 +78,14 @@ def evaluate(model, loader, device):
     return total_loss / len(loader)
 
 
-# ── threshold tuning (same as baseline for fair comparison) ───────────────────
 @torch.no_grad()
 def find_best_threshold(model, loader, device):
     model.eval()
     all_probs, all_y = [], []
-
     for batch in loader:
         input_ids      = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
         labels         = batch["labels"].cpu().numpy()
-
         outputs = model(input_ids=input_ids, attention_mask=attention_mask)
         logits  = outputs["logits"].cpu().numpy()
         probs   = 1 / (1 + np.exp(-logits))
@@ -115,12 +107,10 @@ def find_best_threshold(model, loader, device):
     return float(best_thr), float(best_f1)
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
 
-    # Same data pipeline as baseline — ensures fair comparison
     ds, _ = prepare_unfair_tos_datasets(max_length=256)
 
     train_loader = DataLoader(
@@ -136,8 +126,26 @@ def main():
         collate_fn=collate_fn,
     )
 
-    model = ContrastiveLegalBert(num_labels=8, proj_dim=128,
-                                  lambda_cls=1.0, lambda_con=0.5)
+    # Compute capped pos_weight exactly like train_baseline.py
+    all_labels = np.array(ds["train"]["labels"])
+    pos_counts = all_labels.sum(axis=0)
+    neg_counts = len(ds["train"]) - pos_counts
+    pos_weight = torch.clamp(
+        torch.tensor(
+            neg_counts / np.clip(pos_counts, 1, None),
+            dtype=torch.float
+        ),
+        max=10.0
+    ).to(device)
+    print("pos_weight (capped):", pos_weight)
+
+    model = ContrastiveLegalBert(
+        num_labels=8,
+        proj_dim=128,
+        lambda_cls=1.0,
+        lambda_con=0.5,
+        pos_weight=pos_weight,
+    )
     model.to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=CONTRASTIVE_LR)
@@ -148,28 +156,30 @@ def main():
         num_training_steps=num_training_steps,
     )
 
-    print("\nStarting contrastive training...")
+    print("\\nStarting contrastive training...")
     for epoch in range(1, CONTRASTIVE_EPOCHS + 1):
         train_loss = train_epoch(model, train_loader, optimizer, scheduler, device)
         val_loss   = evaluate(model, val_loader, device)
         print(f"Epoch {epoch}/{CONTRASTIVE_EPOCHS}: "
               f"train_loss={train_loss:.4f}  val_loss={val_loss:.4f}")
 
-    print("\nFinding best threshold on validation set...")
+    print("\\nFinding best threshold on validation set...")
     best_thr, best_f1 = find_best_threshold(model, val_loader, device)
 
-    # Save
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-    threshold_path = MODELS_DIR / "contrastive_threshold.json"
-    with open(threshold_path, "w") as f:
+    with open(MODELS_DIR / "contrastive_threshold.json", "w") as f:
         json.dump({"threshold": best_thr, "best_val_micro_f1": best_f1}, f, indent=2)
-    print(f"Saved threshold → {threshold_path}")
+    print(f"Saved threshold → {MODELS_DIR}/contrastive_threshold.json")
 
-    model_path = MODELS_DIR / "contrastive_legal_bert.pt"
-    torch.save(model.state_dict(), model_path)
-    print(f"Saved model     → {model_path}")
+    torch.save(model.state_dict(), MODELS_DIR / "contrastive_legal_bert.pt")
+    print(f"Saved model     → {MODELS_DIR}/contrastive_legal_bert.pt")
 
 
 if __name__ == "__main__":
     main()
+'''
+
+with open("src/training/train_contrastive.py", "w") as f:
+    f.write(code)
+print("train_contrastive.py updated!")
