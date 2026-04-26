@@ -1,4 +1,4 @@
-
+code = '''
 from __future__ import annotations
 
 import json
@@ -44,38 +44,49 @@ def main():
         collate_fn=collate_fn,
     )
 
-    # Load threshold
-    threshold_path = MODELS_DIR / "contrastive_threshold.json"
+    # Load multi-label threshold
     threshold = 0.15
+    threshold_path = MODELS_DIR / "contrastive_threshold.json"
     if threshold_path.exists():
         with open(threshold_path) as f:
             threshold = json.load(f)["threshold"]
-    print(f"Using threshold: {threshold}")
+    print(f"Using multi-label threshold: {threshold}")
 
     # Run inference
-    all_logits, all_labels, all_label_binary = [], [], []
+    all_logits        = []
+    all_labels        = []
+    all_label_binary  = []
+    all_binary_logits = []   # binary head logits
+
     with torch.no_grad():
         for batch in test_loader:
             input_ids      = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+
             all_logits.append(outputs["logits"].cpu())
+            all_binary_logits.append(outputs["binary_logits"].cpu())
             all_labels.append(batch["labels"].cpu())
             all_label_binary.append(batch["label_binary"].cpu())
 
-    logits      = torch.cat(all_logits).numpy()
-    y_true      = torch.cat(all_labels).numpy()
-    y_true_bin  = torch.cat(all_label_binary).numpy()
+    logits     = torch.cat(all_logits).numpy()
+    y_true     = torch.cat(all_labels).numpy()
+    y_true_bin = torch.cat(all_label_binary).numpy()
 
-    probs       = sigmoid(logits)
-    y_pred      = (probs >= threshold).astype(int)
+    # Multi-label predictions
+    probs  = sigmoid(logits)
+    y_pred = (probs >= threshold).astype(int)
 
+    # Binary predictions using binary head logits
+    binary_logits    = torch.cat(all_binary_logits).numpy().squeeze()
+    probs_bin        = 1.0 / (1.0 + np.exp(-binary_logits))
+    binary_threshold = 0.45
+    y_pred_bin       = (probs_bin >= binary_threshold).astype(int)
+
+    # Compute metrics
     macro_f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
     micro_f1 = f1_score(y_true, y_pred, average="micro", zero_division=0)
-
-    probs_bin   = probs.max(axis=1)
-    y_pred_bin  = (probs_bin >= threshold).astype(int)
-    f1_bin      = f1_score(y_true_bin, y_pred_bin, zero_division=0)
+    f1_bin   = f1_score(y_true_bin, y_pred_bin, zero_division=0)
 
     try:
         roc_auc = roc_auc_score(y_true_bin, probs_bin)
@@ -86,22 +97,23 @@ def main():
     except ValueError:
         pr_auc = float("nan")
 
-    print("\n=== Contrastive Model Test Metrics ===")
+    print("\\n=== Contrastive Model Test Metrics ===")
     print(f"Multi-label Macro F1 : {macro_f1:.4f}")
     print(f"Multi-label Micro F1 : {micro_f1:.4f}")
     print(f"Binary F1            : {f1_bin:.4f}")
     print(f"Binary ROC-AUC       : {roc_auc:.4f}")
     print(f"Binary PR-AUC        : {pr_auc:.4f}")
-    print("=======================================\n")
+    print("=======================================\\n")
 
     # Save results
     results = {
-        "macro_f1":  round(float(macro_f1), 4),
-        "micro_f1":  round(float(micro_f1), 4),
-        "binary_f1": round(float(f1_bin),   4),
-        "roc_auc":   round(float(roc_auc),  4),
-        "pr_auc":    round(float(pr_auc),   4),
-        "threshold": threshold,
+        "macro_f1":         round(float(macro_f1), 4),
+        "micro_f1":         round(float(micro_f1), 4),
+        "binary_f1":        round(float(f1_bin),   4),
+        "roc_auc":          round(float(roc_auc),  4),
+        "pr_auc":           round(float(pr_auc),   4),
+        "threshold":        threshold,
+        "binary_threshold": binary_threshold,
     }
 
     reports_dir = Path("reports")
@@ -113,3 +125,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+'''
+
+with open("src/training/evaluate_contrastive.py", "w") as f:
+    f.write(code)
+print("evaluate_contrastive.py updated!")
