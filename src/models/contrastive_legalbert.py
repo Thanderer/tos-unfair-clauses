@@ -1,4 +1,3 @@
-code = '''
 """
 LegalBERT with projection head and supervised contrastive loss.
 Positives: same unfair type
@@ -109,8 +108,6 @@ class ContrastiveLegalBert(nn.Module):
             "embeddings":    z,
             "loss":          loss,
         }
-'''
-
 with open("src/models/contrastive_legalbert.py", "w") as f:
     f.write(code)
 print("contrastive_legalbert.py updated!")
