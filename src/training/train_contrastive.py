@@ -210,7 +210,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
-with open("src/training/train_contrastive.py", "w") as f:
-    f.write(code)
-print("train_contrastive.py updated!")

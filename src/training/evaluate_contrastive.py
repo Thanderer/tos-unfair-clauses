@@ -125,7 +125,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-with open("src/training/evaluate_contrastive.py", "w") as f:
-    f.write(code)
-print("evaluate_contrastive.py updated!")
