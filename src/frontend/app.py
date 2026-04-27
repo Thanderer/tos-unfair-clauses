@@ -158,7 +158,7 @@ with gr.Blocks(title="ToS Risk Analyzer") as demo:
     status = gr.Textbox(label="Status")
 
     file.change(handle_upload, inputs=file, outputs=[status, state])
-    text.change(handle_paste, inputs=text, outputs=[status, state])
+    text.change(handle_paste, inputs=text, outputs=[status, state]).then() #only fire ehrn user stops typing
 
     analyze_btn = gr.Button("✨ Analyze")
 
