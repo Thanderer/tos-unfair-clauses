@@ -37,7 +37,7 @@ def handle_paste(text):
 
 
 # =========================
-# BUILD HTML
+# BUILD CARDS
 # =========================
 def build_cards(results, filter_value):
 
@@ -48,7 +48,8 @@ def build_cards(results, filter_value):
 
     for r in results:
         color = (
-            "#ef4444" if r["severity_band"] == "HIGH"
+            "#7c3aed" if r["severity_band"] == "CRITICAL"
+            else "#ef4444" if r["severity_band"] == "HIGH"
             else "#f59e0b" if r["severity_band"] == "MEDIUM"
             else "#10b981"
         )
@@ -75,7 +76,7 @@ def build_cards(results, filter_value):
 
 
 # =========================
-# API CALL
+# CALL API
 # =========================
 def call_api(clauses):
     if not clauses:
@@ -95,21 +96,30 @@ def call_api(clauses):
             return "<p style='color:red'>No results</p>", "", []
 
         # Counts
+        critical = sum(1 for r in results if r["severity_band"] == "CRITICAL")
         high = sum(1 for r in results if r["severity_band"] == "HIGH")
         medium = sum(1 for r in results if r["severity_band"] == "MEDIUM")
         safe = sum(1 for r in results if r["severity_band"] == "SAFE")
 
         summary_html = f"""
         <div style="display:flex;gap:20px;margin-top:20px">
+
+            <div style="flex:1;background:#7c3aed;color:white;padding:20px;border-radius:12px;text-align:center">
+                <h1>{critical}</h1><p>Critical</p>
+            </div>
+
             <div style="flex:1;background:#ef4444;color:white;padding:20px;border-radius:12px;text-align:center">
                 <h1>{high}</h1><p>High Risk</p>
             </div>
+
             <div style="flex:1;background:#f59e0b;color:white;padding:20px;border-radius:12px;text-align:center">
                 <h1>{medium}</h1><p>Medium</p>
             </div>
+
             <div style="flex:1;background:#10b981;color:white;padding:20px;border-radius:12px;text-align:center">
                 <h1>{safe}</h1><p>Safe</p>
             </div>
+
         </div>
         """
 
@@ -122,7 +132,7 @@ def call_api(clauses):
 
 
 # =========================
-# FILTER HANDLER
+# FILTER
 # =========================
 def apply_filter(filter_value, results):
     if not results:
@@ -154,9 +164,8 @@ with gr.Blocks(title="ToS Risk Analyzer") as demo:
 
     summary = gr.HTML()
 
-    # 🔥 FILTER RADIO
     filter_radio = gr.Radio(
-        choices=["ALL", "HIGH", "MEDIUM", "SAFE"],
+        choices=["ALL", "CRITICAL", "HIGH", "MEDIUM", "SAFE"],
         value="ALL",
         label="Filter Results"
     )

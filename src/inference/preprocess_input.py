@@ -13,7 +13,7 @@ def clean_text(text: str) -> str:
     # Remove bullets
     text = re.sub(r'^\s*[-•*]\s+', '', text, flags=re.MULTILINE)
 
-    # Remove numbering (1. 2. etc.)
+    # Remove numbering
     text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
 
     # Normalize whitespace
@@ -30,17 +30,34 @@ def split_into_clauses(text: str):
     chunks = re.split(r'(?<=[.!?])\s+|\n{2,}', text)
 
     clauses = []
+    clause_id = 0  # ✅ FIX: sequential IDs
 
-    for i, chunk in enumerate(chunks):
+    for chunk in chunks:
         chunk = chunk.strip()
 
-        if len(chunk) < 20:
+        if not chunk:
             continue
 
-        clauses.append({
-            "id": i,
-            "text": chunk
-        })
+        # ✅ FIX: do NOT drop short clauses
+
+        # ✅ FIX: split long clauses (>500 chars)
+        if len(chunk) > 500:
+            sub_chunks = re.split(r'[;,]', chunk)
+        else:
+            sub_chunks = [chunk]
+
+        for sub in sub_chunks:
+            sub = sub.strip()
+
+            if not sub:
+                continue
+
+            clauses.append({
+                "id": clause_id,
+                "text": sub
+            })
+
+            clause_id += 1  # increment only on append
 
     return clauses
 

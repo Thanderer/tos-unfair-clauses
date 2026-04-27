@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from typing import Dict
 import os
+import json
 import random
 
 from src.inference.predict import load_model_and_tokenizer, predict_probabilities
@@ -10,24 +11,48 @@ app = FastAPI()
 
 model = None
 tokenizer = None
-
-MODEL_PATH = "models/baseline_legal_bert.pt"
-
-# =========================
-# SAFE MODEL LOAD
-# =========================
-if os.path.exists(MODEL_PATH):
-    print("✅ Loading model...")
-    model, tokenizer = load_model_and_tokenizer(
-        checkpoint_path=MODEL_PATH,
-        device="cpu"
-    )
-else:
-    print("⚠️ Model NOT found → using fallback mode")
+THRESHOLD = 0.5
 
 
 # =========================
-# PREDICT ENDPOINT
+# PATH HANDLING (FIXED)
+# =========================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+MODEL_PATH = os.path.join(BASE_DIR, "models", "contrastive_legal_bert.pt")
+THRESHOLD_PATH = os.path.join(BASE_DIR, "models", "contrastive_threshold.json")
+
+
+# =========================
+# LOAD MODEL SAFELY
+# =========================
+print(f"🔍 Looking for model at: {MODEL_PATH}")
+
+try:
+    if os.path.exists(MODEL_PATH):
+        print("✅ Model found. Loading...")
+
+        model, tokenizer = load_model_and_tokenizer(
+            checkpoint_path=MODEL_PATH,
+            device="cpu"
+        )
+
+        if os.path.exists(THRESHOLD_PATH):
+            with open(THRESHOLD_PATH) as f:
+                THRESHOLD = json.load(f).get("threshold", 0.5)
+
+        print(f"✅ Model loaded. Threshold: {THRESHOLD}")
+
+    else:
+        print("⚠️ Model NOT found → fallback mode ENABLED")
+
+except Exception as e:
+    print(f"❌ Model load failed: {e}")
+    model = None
+
+
+# =========================
+# API
 # =========================
 @app.post("/predict")
 def predict(data: Dict):
@@ -40,19 +65,20 @@ def predict(data: Dict):
         return {"results": []}
 
     # =========================
-    # FALLBACK MODE (NO MODEL)
+    # FALLBACK
     # =========================
     if model is None:
         results = []
+
         for c in clauses:
-            label = random.choice(["HIGH", "MEDIUM", "SAFE"])
+            label = random.choice(["CRITICAL", "HIGH", "MEDIUM", "SAFE"])
 
             results.append({
                 "id": c.get("id"),
                 "text": c.get("text"),
                 "severity_band": label,
                 "severity_score": random.randint(1, 10),
-                "explanation": "Model not loaded (fallback mode)"
+                "explanation": "Fallback mode (model not loaded)"
             })
 
         return {"results": results}
@@ -60,7 +86,7 @@ def predict(data: Dict):
     # =========================
     # REAL MODEL
     # =========================
-    probs_multi, _ = predict_probabilities(
+    probs_multi, probs_binary = predict_probabilities(
         clauses,
         model,
         tokenizer,
@@ -70,7 +96,7 @@ def predict(data: Dict):
     results = build_clause_results(
         clauses,
         probs_multi,
-        threshold=0.5
+        threshold=THRESHOLD
     )
 
     return {"results": results}
