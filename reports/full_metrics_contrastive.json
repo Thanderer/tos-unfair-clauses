@@ -1,0 +1,10 @@
+{
+  "macro_f1": 0.8227,
+  "micro_f1": 0.8033,
+  "binary_f1": 0.85,
+  "roc_auc": 0.9699,
+  "pr_auc": 0.8946,
+  "spearman_rho": 0.5032,
+  "spearman_p": 0.0,
+  "pairwise_accuracy": 0.9699
+}
