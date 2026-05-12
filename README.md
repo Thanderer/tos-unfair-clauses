@@ -2,25 +2,25 @@
 
 This project detects potentially unfair clauses in online Terms of Service (ToS) and assigns a **severity score** to highlight how intrusive each clause is compared to standard practice.
 
-It is the final project for the **Human-Centred Natural Language Processing** course.
+It is the final project for the **Human-Centred Natural Language Processing** course at Otto von Guericke University Magdeburg (2026).
 
-***
+---
 
 ## Project Goals
 
 - Train a baseline **LegalBERT** classifier on the UNFAIR-ToS / LexGLUE dataset.
-- Extend it with **contrastive learning** to better separate "standard/fair" vs. "intrusive/unfair" clauses.
-- Define a **severity score (1–10)** and simple layman labels:
-  - "You are good to go"
-  - "Needs another look"
-  - "This might be trouble"
-  - "DO NOT AGREE TO THIS"
+- Extend it with **supervised contrastive learning** to better separate "standard/fair" vs. "intrusive/unfair" clause embeddings in representation space.
+- Define a **severity score (1–10)** with plain-English layman labels:
+  - "You are good to go" (SAFE)
+  - "Needs another look" (MEDIUM)
+  - "This might be trouble" (HIGH)
+  - "DO NOT AGREE TO THIS" (CRITICAL)
 - Build a small **web UI** where a user can upload a ToS (text/PDF) and see:
   - Highlighted problematic clauses
-  - Clause-level severity + short explanation
+  - Clause-level severity score + short explanation
   - An overall document verdict
 
-***
+---
 
 ## Installation
 
@@ -38,7 +38,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-***
+---
 
 ## Running the Application
 
@@ -50,11 +50,12 @@ python -m uvicorn api:app --reload
 
 The API will be available at `http://127.0.0.1:8000`.
 On first start, the contrastive LegalBERT model is loaded from `models/contrastive_legal_bert.pt`.
+
 Expected output:
 
 ```
-🔍 Looking for model at: ...\models\contrastive_legal_bert.pt
-✅ Model loaded. Threshold: 0.85
+Looking for model at: ...\models\contrastive_legal_bert.pt
+Model loaded. Threshold: 0.85
 INFO:     Application startup complete.
 ```
 
@@ -69,9 +70,9 @@ python -m src.frontend.app
 Then open `http://127.0.0.1:7860` in your browser.
 Upload a ToS as plain text or PDF and click **Analyse**.
 
-> ⚠️ The backend must be running before the frontend is started. If the API is not up, the frontend will show a connection error.
+> The backend must be running before the frontend is started. If the API is not up, the frontend will show a connection error.
 
-***
+---
 
 ## Repository Structure
 
@@ -115,7 +116,7 @@ tos-unfair-clauses/
     │   ├── __init__.py
     │   ├── load_unfair_tos.py         # LexGLUE UNFAIR-ToS loader + tokenization
     │   ├── preprocess_tosdr.py        # ToS;DR preprocessing
-    │   └── utils_pdf_text.py          # PDF → text, sentence splitting, cleaning
+    │   └── utils_pdf_text.py          # PDF to text, sentence splitting, cleaning
     │
     ├── models/
     │   ├── __init__.py
@@ -132,15 +133,15 @@ tos-unfair-clauses/
     │   ├── __init__.py
     │   ├── preprocess_input.py        # Clean text + split into clauses
     │   ├── predict.py                 # Load model, run inference, return probs
-    │   └── postprocess_input.py       # Probs → severity band + explanations
+    │   └── postprocess_input.py       # Probs to severity band + explanations
     │
     └── frontend/
         ├── __init__.py
-        ├── severity_mapping.py        # Severity score → layman label
+        ├── severity_mapping.py        # Severity score to layman label
         └── app.py                     # Gradio UI
 ```
 
-***
+---
 
 ## Model Weights — Google Drive
 
@@ -153,9 +154,9 @@ models/
 └── contrastive_legal_bert.pt
 ```
 
-The threshold `.json` files are small (1 KB) and **are** committed to the repo.
+The threshold `.json` files are small (< 1 KB) and **are** committed to the repo.
 
-***
+---
 
 ## Switching Between Models
 
@@ -168,7 +169,7 @@ ACTIVE_MODEL = "contrastive"   # uses contrastive_legal_bert.pt (default)
 
 The API and inference pipeline read this value automatically at startup.
 
-***
+---
 
 ## Training
 
@@ -191,15 +192,15 @@ python -m src.training.evaluate        # baseline
 python -m evaluate_contrastive         # contrastive
 ```
 
-> Training was run on Google Colab (T4 GPU). CPU training is supported but slow (~10× longer).
+> Training was run on Google Colab (T4 GPU). CPU training is supported but approximately 10x slower.
 
-***
+---
 
 ## Running on Google Colab
 
 ```python
 # Cell 1 — Clone repo
-!git clone https://github.com/YOUR_USERNAME/tos-unfair-clauses.git
+!git clone https://github.com/Thanderer/tos-unfair-clauses.git
 %cd tos-unfair-clauses
 
 # Cell 2 — Install dependencies
@@ -219,40 +220,51 @@ shutil.copy('/content/drive/MyDrive/hcnlp_models/baseline_legal_bert.pt',    'mo
 !python -m evaluate_contrastive
 ```
 
-***
+---
 
 ## Results
 
 ### Baseline LegalBERT
 
-The baseline uses a dual-head architecture: an 8-label multi-label head for unfair clause type
-classification and a dedicated binary head for fair/unfair detection. Both heads are trained
-jointly with `BCEWithLogitsLoss`. Separate thresholds are tuned on the validation set for each head.
+Dual-head architecture: an 8-label multi-label head for clause type classification and a dedicated binary head for fair/unfair detection. Both heads trained jointly with `BCEWithLogitsLoss`. Separate thresholds tuned on the validation set (multi-label: τ = 0.85, binary: τ = 0.65). Best checkpoint selected at epoch 2 (lowest validation loss).
 
 | Metric | Score |
 |---|---|
-| Multi-label macro F1 | 0.5120 |
-| Multi-label micro F1 | 0.6333 |
-| Binary unfair-vs-fair F1 | 0.7397 |
-| Binary ROC-AUC | **0.9674** |
-| Binary PR-AUC | **0.8807** |
+| Multi-label macro F1 | **0.826** |
+| Multi-label micro F1 | 0.793 |
+| Binary unfair-vs-fair F1 | 0.842 |
+| Binary ROC-AUC | **0.976** |
+| Binary PR-AUC | 0.889 |
 
 ### Contrastive LegalBERT
 
-Extends the baseline with a supervised contrastive projection head that explicitly separates
-fair vs. unfair clause embeddings in representation space.
+Extends the baseline with a supervised contrastive projection head (2-layer MLP, 128-dim, L2-normalised) that explicitly separates fair vs. unfair clause embeddings in representation space. Combined loss: L_classification + λ·L_contrastive (λ = 0.5, temperature τ = 0.07). Best checkpoint selected at epoch 4 of 5.
 
 | Metric | Score |
 |---|---|
-| Binary unfair-vs-fair F1 | **0.8640** |
-| Binary ROC-AUC | **0.9614** |
-| Binary PR-AUC | **0.9090** |
-| Best threshold | 0.85 |
+| Multi-label macro F1 | 0.823 |
+| Multi-label micro F1 | **0.803** |
+| Binary unfair-vs-fair F1 | **0.850** |
+| Binary ROC-AUC | 0.970 |
+| Binary PR-AUC | **0.895** |
+| nDCG@{5, 10, 20} | **1.000** |
+| Kendall τ | 0.417 (p < 0.001) |
+| Pairwise accuracy | > 97% |
 
-The contrastive model improves binary F1 by +12.5 points over the baseline while maintaining
-comparable ROC-AUC, demonstrating that contrastive training produces better-calibrated decision boundaries.
+The contrastive model improves binary F1 (+0.8 pp), micro F1 (+1.0 pp), and PR-AUC (+0.6 pp) over the baseline. The baseline retains a slight edge on macro F1 and ROC-AUC. Perfect nDCG@{5,10,20} means every top-k result shown to the user is a genuinely unfair clause.
 
-***
+---
+
+## Severity Bands
+
+| Band | p_bin range | Score | Verdict |
+|---|---|---|---|
+| SAFE | 0.00 – 0.35 | 1–2 | "You are good to go" |
+| MEDIUM | 0.35 – 0.65 | 3–5 | "Needs another look" |
+| HIGH | 0.65 – 0.85 | 6–8 | "This might be trouble" |
+| CRITICAL | 0.85 – 1.00 | 9–10 | "DO NOT AGREE TO THIS" |
+
+---
 
 ## Architecture Notes
 
@@ -261,12 +273,24 @@ comparable ROC-AUC, demonstrating that contrastive training produces better-cali
 - `baseline_threshold.json` and `contrastive_threshold.json` each store a `threshold` key loaded at API startup
 - The fallback mode in `api.py` returns random severity bands if the model checkpoint is missing — useful for UI development without the full model
 
-***
+---
 
 ## Why This Design
 
-- UNFAIR-ToS provides supervised clause-level labels that directly match the task.
-- LegalBERT is pre-trained on legal text, giving a stronger domain baseline than general BERT.
-- The dual-head design separates the "what type" (8-label) and "is it unfair" (binary) signals, with separate threshold tuning for each.
-- Contrastive learning encourages the encoder to learn *intrinsic unfairness features* rather than surface-level topic patterns.
-- The layman severity labels (1–10 mapped to verdict strings) are designed for the non-expert user — the core principle of the Human-Centred NLP course.
+- **UNFAIR-ToS** provides supervised clause-level labels that directly match the task.
+- **LegalBERT** is pre-trained on legal text, giving a stronger domain baseline than general BERT.
+- The **dual-head design** separates the "what type" (8-label) and "is it unfair" (binary) signals, with separate threshold tuning for each.
+- **Contrastive learning** encourages the encoder to learn intrinsic unfairness features rather than surface-level topic patterns.
+- The **layman severity labels** (1–10 mapped to verdict strings) are designed for the non-expert user — the core principle of the Human-Centred NLP course.
+
+---
+
+## Team
+
+| Name | Role |
+|---|---|
+| Ayush Khare | Contrastive model, evaluation, ranking metrics |
+| Jashkumar Himmatbhai Dhameliya | Baseline model, training pipeline, threshold tuning |
+| Kavya Nachimuthu Chandrasekaran | Frontend UI, severity scoring, inference pipeline |
+
+Otto von Guericke University Magdeburg · Human-Centred NLP · 2026
