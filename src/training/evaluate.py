@@ -10,6 +10,7 @@ import torch
 from typing import cast
 from torch.utils.data import DataLoader, Dataset as TorchDataset
 from sklearn.metrics import f1_score, roc_auc_score, average_precision_score
+from scipy.stats import spearmanr
 
 from src.config import BASE_MODEL_NAME, BATCH_SIZE, MODELS_DIR
 from src.data.load_unfair_tos import prepare_unfair_tos_datasets
@@ -102,12 +103,30 @@ def evaluate_checkpoint(checkpoint_path: Path, device: torch.device) -> None:
     except ValueError:
         ap_bin = float("nan")
 
+    # ── Spearman correlation ───────────────────────────────────────────────────
+    # Measures rank correlation between model's confidence score and true label.
+    # A higher Spearman rho means the model ranks unfair clauses higher consistently.
+    spearman_rho, spearman_p = spearmanr(probs_bin, y_true_bin)
+
+    # ── Pairwise accuracy ──────────────────────────────────────────────────────
+    # For every (unfair, fair) pair, does the model score the unfair one higher?
+    # This directly measures severity ranking quality.
+    rng = np.random.default_rng(42)
+    unfair_scores = probs_bin[y_true_bin == 1]
+    fair_scores   = probs_bin[y_true_bin == 0]
+    n_pairs = min(2000, len(unfair_scores) * len(fair_scores))
+    ui = rng.integers(0, len(unfair_scores), n_pairs)
+    fi = rng.integers(0, len(fair_scores),   n_pairs)
+    pairwise_acc = float((unfair_scores[ui] > fair_scores[fi]).mean())
+
     print("\n=== UNFAIR-ToS test metrics ===")
     print(f"Multi-label macro F1: {macro_f1:.4f}")
     print(f"Multi-label micro F1: {micro_f1:.4f}")
     print(f"Binary unfair-vs-fair F1: {f1_bin:.4f}")
     print(f"Binary ROC-AUC: {roc_auc_bin:.4f}")
     print(f"Binary PR-AUC: {ap_bin:.4f}")
+    print(f"Spearman rho: {spearman_rho:.4f}  (p={spearman_p:.4f})")
+    print(f"Pairwise Accuracy: {pairwise_acc:.4f}")
     print("================================\n")
 
     # Save results to reports/
@@ -115,11 +134,14 @@ def evaluate_checkpoint(checkpoint_path: Path, device: torch.device) -> None:
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     results = {
-        "macro_f1": round(float(macro_f1), 4),
-        "micro_f1": round(float(micro_f1), 4),
-        "binary_f1": round(float(f1_bin), 4),
-        "roc_auc": round(float(roc_auc_bin), 4),
-        "pr_auc": round(float(ap_bin), 4),
+        "macro_f1":        round(float(macro_f1), 4),
+        "micro_f1":        round(float(micro_f1), 4),
+        "binary_f1":       round(float(f1_bin), 4),
+        "roc_auc":         round(float(roc_auc_bin), 4),
+        "pr_auc":          round(float(ap_bin), 4),
+        "spearman_rho":    round(float(spearman_rho), 4),
+        "spearman_p":      round(float(spearman_p), 4),
+        "pairwise_accuracy": round(float(pairwise_acc), 4),
     }
 
     with open(reports_dir / "baseline_metrics.json", "w") as f:
